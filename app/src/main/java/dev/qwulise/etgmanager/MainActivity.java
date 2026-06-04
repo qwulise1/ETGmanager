@@ -5,7 +5,6 @@ import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CompoundButton;
@@ -18,8 +17,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
 import java.io.InputStreamReader;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     private static final String CONFIG_PATH = "/data/adb/etgmanager/config.properties";
@@ -28,6 +27,8 @@ public class MainActivity extends Activity {
     private String pythonMode = "guard";
     private boolean crashGuard = true;
     private boolean memoryLog = true;
+    private boolean loadingRoot = false;
+    private boolean savingRoot = false;
 
     private TextView statusText;
     private RadioButton allowRadio;
@@ -41,9 +42,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(245, 246, 250));
         getWindow().setNavigationBarColor(Color.rgb(245, 246, 250));
-        loadConfigFromRoot();
         buildUi();
         refreshStatus();
+        loadConfigAsync(false);
     }
 
     private void buildUi() {
@@ -58,7 +59,7 @@ public class MainActivity extends Activity {
 
         TextView title = text("ETGmanager", 30, true, Color.rgb(20, 24, 35));
         root.addView(title);
-        TextView sub = text("LSPosed guard для ExteraGram • v0.1.2", 14, false, Color.rgb(100, 106, 120));
+        TextView sub = text("LSPosed guard для ExteraGram • v0.1.3", 14, false, Color.rgb(100, 106, 120));
         sub.setPadding(0, dp(3), 0, dp(14));
         root.addView(sub);
 
@@ -113,19 +114,13 @@ public class MainActivity extends Activity {
 
         Button save = button("Сохранить конфиг через root", true);
         save.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                saveConfigWithRoot();
-            }
+            @Override public void onClick(View v) { saveConfigAsync(); }
         });
         root.addView(save);
 
         Button reload = button("Перечитать конфиг", false);
         reload.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                loadConfigFromRoot();
-                buildUi();
-                toast("Конфиг перечитан");
-            }
+            @Override public void onClick(View v) { loadConfigAsync(true); }
         });
         root.addView(reload);
 
@@ -142,17 +137,38 @@ public class MainActivity extends Activity {
         if ("allow".equals(pythonMode)) modeText = "Python: allow, менеджер почти не вмешивается";
         else if ("block".equals(pythonMode)) modeText = "Python: block, максимальная экономия";
         else modeText = "Python: guard, рекомендованный режим";
+        String busy = "";
+        if (loadingRoot) busy = "\nRoot: читаю конфиг...";
+        if (savingRoot) busy = "\nRoot: сохраняю конфиг...";
         statusText.setText(
                 modeText + "\n" +
                 "Crash guard: " + onOff(crashGuard) + "\n" +
                 "Memory log: " + onOff(memoryLog) + "\n" +
-                "Config: " + CONFIG_PATH
+                "Config: " + CONFIG_PATH + busy
         );
     }
 
-    private void loadConfigFromRoot() {
-        String out = su("cat " + CONFIG_PATH + " 2>/dev/null");
-        if (out == null || out.trim().isEmpty()) return;
+    private void loadConfigAsync(final boolean showToast) {
+        if (loadingRoot) return;
+        loadingRoot = true;
+        refreshStatus();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final String out = su("cat " + CONFIG_PATH + " 2>/dev/null");
+                if (out != null && !out.trim().isEmpty()) parseConfig(out);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        loadingRoot = false;
+                        buildUi();
+                        refreshStatus();
+                        if (showToast) toast(out == null ? "Root timeout" : "Конфиг перечитан");
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void parseConfig(String out) {
         String[] lines = out.split("\\r?\\n");
         for (String raw : lines) {
             String line = raw.trim();
@@ -171,36 +187,45 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void saveConfigWithRoot() {
-        String cfg = "python_mode=" + pythonMode + "\n" +
+    private void saveConfigAsync() {
+        if (savingRoot) return;
+        savingRoot = true;
+        refreshStatus();
+        final String cfg = "python_mode=" + pythonMode + "\n" +
                 "enable_crash_guard=" + crashGuard + "\n" +
                 "enable_memory_log=" + memoryLog + "\n";
-        String escaped = cfg.replace("'", "'\\''");
-        String cmd = "mkdir -p /data/adb/etgmanager && printf '" + escaped + "' > " + CONFIG_PATH + " && chmod 644 " + CONFIG_PATH + " && echo ETGMANAGER_OK";
-        String out = su(cmd);
-        if (out != null && out.contains("ETGMANAGER_OK")) {
-            toast("Сохранено. Перезапусти ETG.");
-        } else {
-            toast("Root не дал сохранить конфиг");
-        }
-        refreshStatus();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                String escaped = cfg.replace("'", "'\\''");
+                String cmd = "mkdir -p /data/adb/etgmanager && printf '" + escaped + "' > " + CONFIG_PATH + " && chmod 644 " + CONFIG_PATH + " && echo ETGMANAGER_OK";
+                final String out = su(cmd);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        savingRoot = false;
+                        refreshStatus();
+                        if (out != null && out.contains("ETGMANAGER_OK")) toast("Сохранено. Перезапусти ETG.");
+                        else toast("Root не дал сохранить конфиг");
+                    }
+                });
+            }
+        }).start();
     }
 
     private String su(String command) {
         StringBuilder sb = new StringBuilder();
         Process p = null;
         try {
-            p = Runtime.getRuntime().exec("su");
-            DataOutputStream os = new DataOutputStream(p.getOutputStream());
-            os.writeBytes(command + "\n");
-            os.writeBytes("exit\n");
-            os.flush();
+            p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+            boolean done = p.waitFor(4, TimeUnit.SECONDS);
+            if (!done) {
+                p.destroy();
+                return null;
+            }
             BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
             BufferedReader er = new BufferedReader(new InputStreamReader(p.getErrorStream()));
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
             while ((line = er.readLine()) != null) sb.append(line).append('\n');
-            p.waitFor();
         } catch (Throwable t) {
             return "";
         } finally {
