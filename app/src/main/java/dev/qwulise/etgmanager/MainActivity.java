@@ -23,6 +23,7 @@ import java.io.InputStreamReader;
 
 public class MainActivity extends Activity {
     private static final String CONFIG_PATH = "/data/adb/etgmanager/config.properties";
+    private static final int BLUE = Color.rgb(70, 91, 205);
 
     private String pythonMode = "guard";
     private boolean crashGuard = true;
@@ -38,6 +39,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(245, 246, 250));
+        getWindow().setNavigationBarColor(Color.rgb(245, 246, 250));
         loadConfigFromRoot();
         buildUi();
         refreshStatus();
@@ -50,12 +53,12 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(24), dp(18), dp(18));
         scroll.addView(root);
 
-        TextView title = text("ETGmanager", 28, true, Color.rgb(20, 24, 35));
+        TextView title = text("ETGmanager", 30, true, Color.rgb(20, 24, 35));
         root.addView(title);
-        TextView sub = text("LSPosed guard для ExteraGram", 14, false, Color.rgb(100, 106, 120));
+        TextView sub = text("LSPosed guard для ExteraGram • v0.1.2", 14, false, Color.rgb(100, 106, 120));
         sub.setPadding(0, dp(3), 0, dp(14));
         root.addView(sub);
 
@@ -108,7 +111,7 @@ public class MainActivity extends Activity {
         options.addView(memorySwitch);
         root.addView(card("Защита", options));
 
-        Button save = button("Сохранить конфиг через root");
+        Button save = button("Сохранить конфиг через root", true);
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 saveConfigWithRoot();
@@ -116,7 +119,7 @@ public class MainActivity extends Activity {
         });
         root.addView(save);
 
-        Button reload = button("Перечитать конфиг");
+        Button reload = button("Перечитать конфиг", false);
         reload.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 loadConfigFromRoot();
@@ -173,9 +176,13 @@ public class MainActivity extends Activity {
                 "enable_crash_guard=" + crashGuard + "\n" +
                 "enable_memory_log=" + memoryLog + "\n";
         String escaped = cfg.replace("'", "'\\''");
-        String cmd = "mkdir -p /data/adb/etgmanager && printf '" + escaped + "' > " + CONFIG_PATH + " && chmod 644 " + CONFIG_PATH;
+        String cmd = "mkdir -p /data/adb/etgmanager && printf '" + escaped + "' > " + CONFIG_PATH + " && chmod 644 " + CONFIG_PATH + " && echo ETGMANAGER_OK";
         String out = su(cmd);
-        toast("Конфиг сохранён. Перезапусти ETG.");
+        if (out != null && out.contains("ETGMANAGER_OK")) {
+            toast("Сохранено. Перезапусти ETG.");
+        } else {
+            toast("Root не дал сохранить конфиг");
+        }
         refreshStatus();
     }
 
@@ -262,10 +269,22 @@ public class MainActivity extends Activity {
         return s;
     }
 
-    private Button button(String s) {
+    private Button button(String s, boolean primary) {
         Button b = new Button(this);
         b.setText(s);
         b.setAllCaps(false);
+        b.setTextSize(15f);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(14));
+        if (primary) {
+            bg.setColor(BLUE);
+            b.setTextColor(Color.WHITE);
+        } else {
+            bg.setColor(Color.WHITE);
+            bg.setStroke(dp(1), Color.rgb(220, 224, 236));
+            b.setTextColor(Color.rgb(35, 39, 50));
+        }
+        b.setBackground(bg);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
         lp.setMargins(0, 0, 0, dp(10));
         b.setLayoutParams(lp);
