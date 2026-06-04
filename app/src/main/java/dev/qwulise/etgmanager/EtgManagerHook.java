@@ -1,6 +1,9 @@
 package dev.qwulise.etgmanager;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.lang.reflect.Method;
+import java.util.Properties;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -13,28 +16,41 @@ public class EtgManagerHook implements IXposedHookLoadPackage {
     private static final String TAG = "ETGmanager";
     private static final String TARGET = "com.exteragram.messenger";
 
+    private Settings settings;
+
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         if (!TARGET.equals(lpparam.packageName)) return;
-        log("loaded in " + lpparam.packageName + ", process=" + lpparam.processName);
-        installCrashLogger();
-        logMemory("start");
-        forceConfig(lpparam.classLoader);
-        stopEtgPluginController(lpparam.classLoader);
-        stopPythonEngine(lpparam.classLoader);
+
+        settings = Settings.load();
+        log("loaded in " + lpparam.packageName + ", process=" + lpparam.processName + ", mode=" + settings.pythonMode);
+
+        if (settings.enableCrashGuard) installCrashLogger();
+        if (settings.enableMemoryLog) logMemory("start");
+
+        if ("block".equals(settings.pythonMode)) {
+            forcePythonOff(lpparam.classLoader);
+            blockEtgPluginController(lpparam.classLoader);
+            blockPythonEngine(lpparam.classLoader);
+        } else if ("guard".equals(settings.pythonMode)) {
+            guardPythonMode(lpparam.classLoader);
+            watchEtgPluginController(lpparam.classLoader);
+            watchPythonEngine(lpparam.classLoader);
+        } else {
+            log("python mode allow: ETG python engine is untouched");
+        }
     }
 
-    private void forceConfig(final ClassLoader cl) {
+    private void guardPythonMode(final ClassLoader cl) {
         final Class<?> cfg = XposedHelpers.findClassIfExists("com.exteragram.messenger.ExteraConfig", cl);
         if (cfg == null) {
             log("ExteraConfig not found");
             return;
         }
-        applyConfig(cfg, "early");
+        applyGuardConfig(cfg, "early");
         XC_MethodHook after = new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) {
-                applyConfig(cfg, String.valueOf(((Method) param.method).getName()));
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                applyGuardConfig(cfg, String.valueOf(((Method) param.method).getName()));
             }
         };
         hookAll(cfg, "loadConfig", after);
@@ -42,21 +58,74 @@ public class EtgManagerHook implements IXposedHookLoadPackage {
         hookAll(cfg, "init", after);
     }
 
-    private void applyConfig(Class<?> cfg, String reason) {
-        setBool(cfg, "pluginsEngine", false);
-        setBool(cfg, "pluginsSafeMode", true);
+    private void applyGuardConfig(Class<?> cfg, String reason) {
         setBool(cfg, "pluginsPySdkAutoUpdate", false);
         setBool(cfg, "pluginsPySdkBetaVersions", false);
-        log("plugin engine off: " + reason);
+        log("python guard applied: sdk autoupdate off, reason=" + reason);
     }
 
-    private void stopEtgPluginController(ClassLoader cl) {
+    private void forcePythonOff(final ClassLoader cl) {
+        final Class<?> cfg = XposedHelpers.findClassIfExists("com.exteragram.messenger.ExteraConfig", cl);
+        if (cfg == null) return;
+        applyBlockConfig(cfg, "early");
+        XC_MethodHook after = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                applyBlockConfig(cfg, String.valueOf(((Method) param.method).getName()));
+            }
+        };
+        hookAll(cfg, "loadConfig", after);
+        hookAll(cfg, "reloadConfig", after);
+        hookAll(cfg, "init", after);
+    }
+
+    private void applyBlockConfig(Class<?> cfg, String reason) {
+        setBool(cfg, "pluginsEngine", false);
+        setBool(cfg, "pluginsPySdkAutoUpdate", false);
+        setBool(cfg, "pluginsPySdkBetaVersions", false);
+        log("python engine blocked: " + reason);
+    }
+
+    private void watchEtgPluginController(ClassLoader cl) {
+        Class<?> pc = XposedHelpers.findClassIfExists("com.exteragram.messenger.plugins.PluginsController", cl);
+        if (pc == null) return;
+        XC_MethodHook watch = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                log("PluginsController." + ((Method) param.method).getName() + " begin");
+                if (settings.enableMemoryLog) logMemory("before-plugins-controller");
+            }
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                log("PluginsController." + ((Method) param.method).getName() + " end");
+                if (settings.enableMemoryLog) logMemory("after-plugins-controller");
+            }
+        };
+        hookAll(pc, "init", watch);
+        hookAll(pc, "restart", watch);
+    }
+
+    private void watchPythonEngine(ClassLoader cl) {
+        Class<?> pe = XposedHelpers.findClassIfExists("com.exteragram.messenger.plugins.PythonPluginsEngine", cl);
+        if (pe == null) return;
+        XC_MethodHook watch = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                log("PythonPluginsEngine." + ((Method) param.method).getName() + " begin");
+                if (settings.enableMemoryLog) logMemory("before-python-engine");
+            }
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                log("PythonPluginsEngine." + ((Method) param.method).getName() + " end");
+                if (settings.enableMemoryLog) logMemory("after-python-engine");
+            }
+        };
+        hookAll(pe, "init", watch);
+        hookAll(pe, "loadPlugins", watch);
+        hookAll(pe, "loadPlugin", watch);
+        hookAll(pe, "unloadPlugin", watch);
+    }
+
+    private void blockEtgPluginController(ClassLoader cl) {
         Class<?> pc = XposedHelpers.findClassIfExists("com.exteragram.messenger.plugins.PluginsController", cl);
         if (pc == null) return;
         hookAll(pc, "isPluginEngineSupported", new XC_MethodReplacement() {
-            @Override protected Object replaceHookedMethod(MethodHookParam param) {
-                return false;
-            }
+            @Override protected Object replaceHookedMethod(MethodHookParam param) { return false; }
         });
         XC_MethodReplacement noop = new XC_MethodReplacement() {
             @Override protected Object replaceHookedMethod(MethodHookParam param) {
@@ -68,7 +137,7 @@ public class EtgManagerHook implements IXposedHookLoadPackage {
         hookAll(pc, "restart", noop);
     }
 
-    private void stopPythonEngine(ClassLoader cl) {
+    private void blockPythonEngine(ClassLoader cl) {
         Class<?> pe = XposedHelpers.findClassIfExists("com.exteragram.messenger.plugins.PythonPluginsEngine", cl);
         if (pe == null) return;
         XC_MethodReplacement noop = new XC_MethodReplacement() {
@@ -93,9 +162,7 @@ public class EtgManagerHook implements IXposedHookLoadPackage {
     }
 
     private void setBool(Class<?> cls, String field, boolean value) {
-        try {
-            XposedHelpers.setStaticBooleanField(cls, field, value);
-        } catch (Throwable ignored) {}
+        try { XposedHelpers.setStaticBooleanField(cls, field, value); } catch (Throwable ignored) {}
     }
 
     private void installCrashLogger() {
@@ -123,7 +190,37 @@ public class EtgManagerHook implements IXposedHookLoadPackage {
         } catch (Throwable ignored) {}
     }
 
-    private static void log(String s) {
-        XposedBridge.log(TAG + ": " + s);
+    private static void log(String s) { XposedBridge.log(TAG + ": " + s); }
+
+    private static final class Settings {
+        String pythonMode = "guard";
+        boolean enableCrashGuard = true;
+        boolean enableMemoryLog = true;
+
+        static Settings load() {
+            Settings s = new Settings();
+            File file = new File("/data/adb/etgmanager/config.properties");
+            if (!file.exists()) return s;
+            Properties p = new Properties();
+            try (FileInputStream in = new FileInputStream(file)) {
+                p.load(in);
+                String mode = p.getProperty("python_mode", s.pythonMode).trim().toLowerCase();
+                if ("allow".equals(mode) || "guard".equals(mode) || "block".equals(mode)) s.pythonMode = mode;
+                s.enableCrashGuard = bool(p, "enable_crash_guard", s.enableCrashGuard);
+                s.enableMemoryLog = bool(p, "enable_memory_log", s.enableMemoryLog);
+            } catch (Throwable t) {
+                log("config read failed: " + t);
+            }
+            return s;
+        }
+
+        private static boolean bool(Properties p, String key, boolean def) {
+            String v = p.getProperty(key);
+            if (v == null) return def;
+            v = v.trim().toLowerCase();
+            if ("1".equals(v) || "true".equals(v) || "yes".equals(v) || "on".equals(v)) return true;
+            if ("0".equals(v) || "false".equals(v) || "no".equals(v) || "off".equals(v)) return false;
+            return def;
+        }
     }
 }
