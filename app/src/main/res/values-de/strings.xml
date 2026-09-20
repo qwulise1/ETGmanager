@@ -7,6 +7,7 @@
     <string name="language_english">Englisch</string>
     <string name="language_chinese">Chinesisch</string>
     <string name="language_german">Deutsch</string>
+    <string name="language_russian">Russisch</string>
 
     <string name="action_ok">OK</string>
     <string name="action_cancel">Abbrechen</string>
@@ -60,6 +61,7 @@
     <string name="category_notifications">Benachrichtigungen</string>
     <string name="category_external_control">Externe Steuerung</string>
     <string name="category_system_hooks">System-Hooks</string>
+    <string name="category_wifi_identity">WLAN-Identität</string>
     <string name="category_location">Standort</string>
     <string name="category_altitude">Höhe</string>
     <string name="category_movement">Bewegung</string>
@@ -78,6 +80,17 @@
     <string name="setting_external_broadcast_description">Aus (Standard): Blockiert den BroadcastReceiver — keine App oder ADB-Shell kann das Spoofing starten/stoppen oder Koordinaten über Intents setzen. Ein: Jede installierte App und \'adb shell am broadcast\' können das Modul steuern (keine Berechtigungsprüfung; Koordinaten werden auf gültige Breitengrad-/Längengradbereiche begrenzt). Aktiviere dies nur, wenn du jeder App auf dem Gerät vertraust oder die App auf einem kontrollierten Gerät (z. B. zur Automatisierung) läuft. Siehe docs/EXTERNAL_CONTROL.md für Aktionen und Sperroptionen.</string>
     <string name="setting_system_hooks_title">Systemweite Hooks aktivieren</string>
     <string name="setting_system_hooks_description">Fügt das Android-System-Framework (android) und den Telefonprozess (com.android.phone) zum Modulbereich hinzu, sodass der Standort auf Systemebene gefälscht werden kann. Ein Geräteneustart ist erforderlich, damit die Änderungen wirksam werden.</string>
+    <string name="setting_wifi_identity_title">WLAN-Identitäts-Hooks aktivieren</string>
+    <string name="setting_wifi_identity_description">Täuscht die WLAN-Verbindungsidentität vor und blendet echte Scanergebnisse für ausgewählte Ziel-Apps aus, während die Standorttäuschung aktiv ist.</string>
+    <string name="setting_wifi_ssid_title">WLAN-SSID</string>
+    <string name="setting_wifi_ssid_description">SSID, die von WLAN-Verbindungs-Hooks für ausgewählte Ziel-Apps zurückgegeben wird, während die Täuschung aktiv ist.</string>
+    <string name="setting_wifi_ssid_label">SSID</string>
+    <string name="setting_wifi_bssid_title">WLAN-BSSID</string>
+    <string name="setting_wifi_bssid_description">BSSID, die von WLAN-Verbindungs-Hooks zurückgegeben wird. Ungültige MAC-Adressen fallen auf den Standard-Platzhalter zurück.</string>
+    <string name="setting_wifi_bssid_label">BSSID</string>
+    <string name="setting_wifi_rssi_title">WLAN-RSSI</string>
+    <string name="setting_wifi_rssi_description">Signalstärke in dBm, die von WLAN-Verbindungs-Hooks zurückgegeben wird. Werte werden auf den Bereich von -127 bis 0 begrenzt.</string>
+    <string name="setting_wifi_rssi_label">RSSI</string>
     <string name="dialog_restart_required_title">Neustart erforderlich</string>
     <string name="dialog_restart_required_enable_message">Systemweite Hooks wurden zum Modulbereich hinzugefügt. Bitte starte dein Gerät neu, damit sie wirksam werden.</string>
     <string name="dialog_restart_required_disable_message">Systemweite Hooks wurden aus dem Modulbereich entfernt. Bitte starte dein Gerät neu, um sie vollständig rückgängig zu machen.</string>
