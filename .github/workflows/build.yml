@@ -7,6 +7,9 @@ on:
     branches: [ "**" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build debug APK
@@ -14,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -37,3 +42,38 @@ jobs:
           name: XposedFakeLocation-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
+
+      - name: Prepare APK file
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk XposedFakeLocation.apk
+          ls -lh XposedFakeLocation.apk
+
+      - name: Push APK to apk-binaries branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan apk-binaries
+          git rm -rf .
+          cp app/build/outputs/apk/debug/app-debug.apk XposedFakeLocation.apk
+          git add XposedFakeLocation.apk
+          git commit -m "Upload XposedFakeLocation.apk binary"
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:apk-binaries --force || true
+
+      - name: Upload to temp.sh
+        id: upload_tempsh
+        run: |
+          URL=$(curl -s -F "file=@XposedFakeLocation.apk" https://temp.sh/upload || true)
+          echo "DOWNLOAD_URL=$URL" >> $GITHUB_ENV
+          echo "Temp.sh URL: $URL"
+          echo "### Download link: $URL" >> $GITHUB_STEP_SUMMARY
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete v0.1.5-ru --yes || true
+          git tag -d v0.1.5-ru || true
+          git push origin :refs/tags/v0.1.5-ru || true
+          gh release create v0.1.5-ru XposedFakeLocation.apk --title "v0.1.5-ru" --notes "Automated build of XposedFakeLocation with Russian localization" || true
